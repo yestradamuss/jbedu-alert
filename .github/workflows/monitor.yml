@@ -1,0 +1,62 @@
+name: jbedu-monitor
+
+on:
+  schedule:
+    # 5분마다, 한국시간 새벽 1~5시 제외 (cron은 UTC 기준: UTC 16~19시 = KST 01~04시)
+    - cron: "*/5 0-15,20-23 * * *"
+  workflow_dispatch:
+    inputs:
+      send_test:
+        description: "텔레그램/사이트 접속 테스트만 실행"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # config.json / state.json 저장
+  actions: write    # 스케줄 자동 정지 방지
+
+concurrency:
+  group: jbedu-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 테스트 (수동 실행 + send_test 체크 시)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.send_test }}
+        run: python3 monitor.py --test
+
+      - name: 예약현황 확인
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test) }}
+        run: python3 monitor.py
+
+      - name: 설정/상태 저장 (바뀐 경우에만 커밋)
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test) }}
+        run: |
+          git add config.json state.json
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "update state"
+            for i in 1 2 3; do
+              git pull --rebase --autostash && git push && break
+              git rebase --abort 2>/dev/null || true
+              sleep 3
+            done
+          fi
+
+      - name: 스케줄 유지 (하루 한 번, 60일 무활동 자동 정지 방지)
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$(date -u +%H%M)" < "0010" ]]; then
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/monitor.yml/enable" || true
+          fi

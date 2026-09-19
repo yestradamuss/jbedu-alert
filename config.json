@@ -1,0 +1,5 @@
+{
+  "_help": "watches에 {\"text\": \"11월 금토 6인실\"} 처럼 추가하면 됩니다. 텔레그램 /watch 명령과 같은 문법이에요. id/ref는 자동으로 채워져요.",
+  "watches": [],
+  "fail_alert_after": 6
+}
