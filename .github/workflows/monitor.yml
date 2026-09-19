@@ -38,6 +38,12 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.send_test }}
         run: python3 monitor.py --test
 
+      - name: 다음 실행 예약 (이 실행이 끝나면 대기열에서 바로 이어받음)
+        if: ${{ !(github.event_name == 'workflow_dispatch' && (inputs.send_test || inputs.minutes != '')) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run monitor.yml -R "${{ github.repository }}" || true
+
       - name: 스케줄 유지 (60일 무활동 자동 정지 방지)
         if: ${{ github.event_name == 'schedule' }}
         env:
