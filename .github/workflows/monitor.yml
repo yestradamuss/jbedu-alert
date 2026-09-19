@@ -2,8 +2,8 @@ name: jbedu-monitor
 
 on:
   schedule:
-    # 5분마다, 한국시간 새벽 1~5시 제외 (cron은 UTC 기준: UTC 16~19시 = KST 01~04시)
-    - cron: "*/5 0-15,20-23 * * *"
+    # 5분마다, 24시간 (Public 저장소라 Actions 시간 제한 없음)
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       send_test:
