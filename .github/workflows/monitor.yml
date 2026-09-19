@@ -2,14 +2,19 @@ name: jbedu-monitor
 
 on:
   schedule:
-    # 5분마다, 24시간 (Public 저장소라 Actions 시간 제한 없음)
-    - cron: "*/5 * * * *"
+    # 매시간 한 번 시동. 실행되면 안에서 60초 간격 루프를 ~5시간 50분 돌고,
+    # 다음 실행은 concurrency 대기열에서 기다렸다가 바로 이어받는다 (cron 지연/누락 우회).
+    - cron: "7 * * * *"
   workflow_dispatch:
     inputs:
       send_test:
         description: "텔레그램/사이트 접속 테스트만 실행"
         type: boolean
         default: false
+      minutes:
+        description: "루프 실행 시간(분). 비우면 350"
+        type: string
+        default: ""
 
 permissions:
   contents: write   # config.json / state.json 저장
@@ -22,7 +27,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 360
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -33,12 +38,19 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.send_test }}
         run: python3 monitor.py --test
 
-      - name: 예약현황 확인
+      - name: 스케줄 유지 (60일 무활동 자동 정지 방지)
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/monitor.yml/enable" || true
+
+      - name: 예약현황 감시 루프 (60초 간격)
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test) }}
-        run: python3 monitor.py
+        run: |
+          timeout ${{ inputs.minutes || 350 }}m python3 -u monitor.py --loop --interval 60 --quiet 0-0 || [ $? -eq 124 ]
 
       - name: 설정/상태 저장 (바뀐 경우에만 커밋)
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test) }}
+        if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.send_test) }}
         run: |
           git add config.json state.json
           if ! git diff --cached --quiet; then
@@ -50,13 +62,4 @@ jobs:
               git rebase --abort 2>/dev/null || true
               sleep 3
             done
-          fi
-
-      - name: 스케줄 유지 (하루 한 번, 60일 무활동 자동 정지 방지)
-        if: ${{ github.event_name == 'schedule' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [[ "$(date -u +%H%M)" < "0010" ]]; then
-            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/monitor.yml/enable" || true
           fi
