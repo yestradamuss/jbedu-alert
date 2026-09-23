@@ -527,6 +527,11 @@ def _in_open_window(now):
     return now.day in (8, 23) and (9, 55) <= (now.hour, now.minute) < (10, 30)
 
 
+def _in_burst_window(now):
+    """매월 8일·23일 10:00~10:03 (선착순 오픈 직후 초단위 경쟁 구간)"""
+    return now.day in (8, 23) and (10, 0) <= (now.hour, now.minute) < (10, 3)
+
+
 def _wait(args, seconds):
     """seconds 동안 대기하되, 텔레그램 새 메시지가 오면 바로 깨어난다 (롱폴링으로 읽기만 함, 확정은 run()이)."""
     end = time.monotonic() + seconds
@@ -562,9 +567,11 @@ def loop(args):
                 print(f"[오류] {e}", file=sys.stderr, flush=True)
         if errors:
             wait = min(args.interval * 2 ** errors, 900)  # 연속 실패 시 지수적으로 물러나기
+        elif _in_burst_window(now):
+            wait = min(wait, 5)
         elif _in_open_window(now):
             wait = min(wait, 30)
-        _wait(args, max(30, wait))
+        _wait(args, max(5, wait))
 
 
 def main():
